@@ -1,13 +1,20 @@
 #!/usr/bin/env python3
 
-import argparse, socket, time, json, select, struct, math
+import argparse
+import socket
+import time
+import json
+import select
+import struct
+import math
 
 #DEBUG = True
 DEBUG = False
 
 parser = argparse.ArgumentParser(description='route packets')
 parser.add_argument('asn', type=int, help="AS Number")
-parser.add_argument('networks', metavar='networks', type=str, nargs='+', help="networks")
+parser.add_argument('networks', metavar='networks',
+                    type=str, nargs='+', help="networks")
 args = parser.parse_args()
 
 ##########################################################################################
@@ -56,9 +63,10 @@ class Router:
         self.sockets = {}
         for relationship in networks:
             network, relation = relationship.split("-")
-            if DEBUG: 
+            if DEBUG:
                 print("Starting socket for", network, relation)
-            self.sockets[network] = socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET)
+            self.sockets[network] = socket.socket(
+                socket.AF_UNIX, socket.SOCK_SEQPACKET)
             self.sockets[network].setblocking(0)
             self.sockets[network].connect(network)
             self.relations[network] = relation
@@ -75,13 +83,13 @@ class Router:
         # TODO
         outroutes = []
         return outroutes
-            
+
     def get_highest_preference(self, routes):
         """ select the route with the shortest AS Path """
         # TODO
         outroutes = []
         return outroutes
-         
+
     def get_self_origin(self, routes):
         """ select self originating routes """
         # TODO
@@ -132,9 +140,9 @@ class Router:
 
     def update(self, srcif, packet):
         """	handle update packets	"""
-        # TODO 
+        # TODO
         return False
-    
+
     def revoke(self, packet):
         """	handle revoke packets	"""
         # TODO
@@ -154,19 +162,18 @@ class Router:
         """ Send a no_route error message """
         # TODO
         return
-    
+
     # test
-    def ip_address_to_binary(self, ip)
+    def ip_address_to_binary(self, ip):
         split_ip = ip.split(".")
         eight_bit_nums = []
         for i in split_ip:
-            i_in_binary = format((int(i), '#010b'))
+            i_in_binary = format(int(i), '#08b')
             eight_bit_nums.append(i_in_binary.split("b")[1])
         binary_ip_str = None
         for i in eight_bit_nums:
             binary_ip_str += i
         return "0b" + binary_ip_str
-
 
     def run(self):
         while True:
