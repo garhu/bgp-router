@@ -131,10 +131,19 @@ class Router:
     def forward(self, srcif, packet):
         """	Forward a data packet	"""
         # {'type': 'data', 'src': '172.168.0.25', 'dst': '192.168.0.25'}
-        if packet["dst"] not in self.routes.values():
+        dst_in_routes = False
+        for route in self.routes:
+            if packet["dst"] in route.values():
+                dst_in_routes = True
+
+        if not dst_in_routes:
             self.send_no_route_message(srcif, packet)
         else:
             self.sockets[packet["dst"]].socket.send(packet.encode())
+
+    def send_no_route_message(self, srcif, packet):
+        # TODO
+        return False
 
     def coalesce(self):
         """	coalesce any routes that are right next to each other	"""
@@ -148,15 +157,15 @@ class Router:
         # add an entry to your forwarding table
         message = packet["msg"]
         network = message["network"]
-        netmask = packet["netmask"]
+        netmask = message["netmask"]
         self.routes.append(
             {"network": network, "netmask": netmask, "peer": srcif})
         # send copies of the announcement to neighboring routers
         packet["src"] = packet["dst"]
         for sock in self.sockets:
             if not self.sockets[sock] == srcif:
-                packet["dst"] = self.sockets[sock]
-                self.sockets[sock].socket.send(packet.encode())
+                packet["dst"] = sock
+                self.sockets[sock].sendall(json.dumps(packet).encode())
     #{'type': 'dump', 'src': '192.168.0.2', 'dst': '192.168.0.1', 'msg': {}}
     # 192.168.0.2
 
