@@ -165,16 +165,17 @@ class Router:
 
     # test
     def ip_address_to_binary(self, ip):
-        # pk cool
-        split_ip = ip.split(".")
+         split_ip = ip.split(".")
         eight_bit_nums = []
         for i in split_ip:
-            i_in_binary = format(int(i), '#08b')
-            eight_bit_nums.append(i_in_binary.split("b")[1])
-        binary_ip_str = None
+            i_in_binary = format(int(i), '08b')
+            eight_bit_nums.append(i_in_binary.split("b")[0])
+        binary_ip_str = ""
         for i in eight_bit_nums:
             binary_ip_str += i
-        return "0b" + binary_ip_str
+        return binary_ip_str
+    
+    def binary_to_ip(self, binary):
 
     def run(self):
         while True:
