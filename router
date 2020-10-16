@@ -155,7 +155,15 @@ class Router:
 
     def handle_packet(self, srcif, packet):
         """	dispatches a packet """
-        # TODO
+        #! TODO
+        # DATA = "data"
+        # DUMP = "dump"
+        # UPDT = "update"
+        # RVKE = "revoke"
+        # NRTE = "no route"
+        message_type = packet["type"]
+        if message_type is UPDT:
+            update(self, scrif, packet)
         return False
 
     def send_error(self, conn, msg):
@@ -165,7 +173,7 @@ class Router:
 
     # test
     def ip_address_to_binary(self, ip):
-         split_ip = ip.split(".")
+        split_ip = ip.split(".")
         eight_bit_nums = []
         for i in split_ip:
             i_in_binary = format(int(i), '08b')
@@ -175,7 +183,12 @@ class Router:
             binary_ip_str += i
         return binary_ip_str
     
-    def binary_to_ip(self, binary):
+    
+    # def binary_to_ip(self, binary):
+        
+    
+    # def 
+
 
     def run(self):
         while True:
