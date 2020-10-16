@@ -141,6 +141,7 @@ class Router:
     def update(self, srcif, packet):
         """	handle update packets	"""
         # TODO
+        self.updates.append(packet)
         return False
 
     def revoke(self, packet):
@@ -182,13 +183,10 @@ class Router:
         for i in eight_bit_nums:
             binary_ip_str += i
         return binary_ip_str
-    
-    
-    # def binary_to_ip(self, binary):
-        
-    
-    # def 
 
+    # def binary_to_ip(self, binary):
+
+    # def
 
     def run(self):
         while True:
