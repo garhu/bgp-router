@@ -166,8 +166,9 @@ class Router:
 
     def dump(self, packet):
         """	handles dump table requests	"""
-        # TODO
-        return True
+        message = {"src": packet["dst"], "dst": packet["src"],
+                   "type": "table", "msg": self.routes}
+        print(message)
 
     def handle_packet(self, srcif, packet):
         """	dispatches a packet """
@@ -182,6 +183,8 @@ class Router:
             self.update(srcif, packet)
         if message_type is DATA:
             self.forward(srcif, packet)
+        if message_type is DUMP:
+            self.dump(packet)
         return False
 
     def send_error(self, conn, msg):
