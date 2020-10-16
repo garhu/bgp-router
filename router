@@ -131,7 +131,7 @@ class Router:
     def forward(self, srcif, packet):
         """	Forward a data packet	"""
         # {'type': 'data', 'src': '172.168.0.25', 'dst': '192.168.0.25'}
-        if packet["dst"] not in self.route.values():
+        if packet["dst"] not in self.routes.values():
             self.send_no_route_message(srcif, packet)
         else:
             self.sockets[packet["dst"]].socket.send(packet.encode())
@@ -146,7 +146,8 @@ class Router:
         # save a copy of the announcement in case you need it later
         self.updates.append(packet)
         # add an entry to your forwarding table
-        network = packet["network"]
+        message = packet["msg"]
+        network = message["network"]
         netmask = packet["netmask"]
         self.routes.append(
             {"network": network, "netmask": netmask, "peer": srcif})
@@ -179,11 +180,11 @@ class Router:
         # RVKE = "revoke"
         # NRTE = "no route"
         message_type = packet["type"]
-        if message_type is UPDT:
+        if message_type == UPDT:
             self.update(srcif, packet)
-        if message_type is DATA:
+        if message_type == DATA:
             self.forward(srcif, packet)
-        if message_type is DUMP:
+        if message_type == DUMP:
             self.dump(packet)
         return False
 
