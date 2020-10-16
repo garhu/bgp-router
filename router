@@ -164,7 +164,8 @@ class Router:
         return
 
     # test
-    def ip_address_to_binary(self, ip)
+    def ip_address_to_binary(self, ip):
+        # pk cool
         split_ip = ip.split(".")
         eight_bit_nums = []
         for i in split_ip:
