@@ -130,6 +130,11 @@ class Router:
 
     def forward(self, srcif, packet):
         """	Forward a data packet	"""
+        # {'type': 'data', 'src': '172.168.0.25', 'dst': '192.168.0.25'}
+        if packet["dst"] not in self.route.values():
+            self.send_no_route_message(srcif, packet)
+        else:
+            self.sockets[packet["dst"]].socket.send(packet.encode())
 
     def coalesce(self):
         """	coalesce any routes that are right next to each other	"""
@@ -143,13 +148,16 @@ class Router:
         # add an entry to your forwarding table
         network = packet["network"]
         netmask = packet["netmask"]
-        self.routes.append({network, netmask, srcif})
+        self.routes.append(
+            {"network": network, "netmask": netmask, "peer": srcif})
         # send copies of the announcement to neighboring routers
         packet["src"] = packet["dst"]
         for sock in self.sockets:
             if not self.sockets[sock] == srcif:
                 packet["dst"] = self.sockets[sock]
                 self.sockets[sock].socket.send(packet.encode())
+    #{'type': 'dump', 'src': '192.168.0.2', 'dst': '192.168.0.1', 'msg': {}}
+    # 192.168.0.2
 
     def revoke(self, packet):
         """	handle revoke packets	"""
