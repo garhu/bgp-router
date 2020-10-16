@@ -130,8 +130,7 @@ class Router:
 
     def forward(self, srcif, packet):
         """	Forward a data packet	"""
-        # TODO
-        return False
+        
 
     def coalesce(self):
         """	coalesce any routes that are right next to each other	"""
@@ -140,9 +139,18 @@ class Router:
 
     def update(self, srcif, packet):
         """	handle update packets	"""
-        # TODO
+        # save a copy of the announcement in case you need it later
         self.updates.append(packet)
-        return False
+        # add an entry to your forwarding table
+        network = packet["network"]
+        netmask = packet["netmask"]
+        self.routes.append({network, netmask, srcif})
+        # send copies of the announcement to neighboring routers
+        packet["src"] = packet["dst"]
+        for sock in self.sockets:
+            if not self.sockets[sock] == srcif:
+                packet["dst"] = self.sockets[sock]
+                sock.send(packet.encode())
 
     def revoke(self, packet):
         """	handle revoke packets	"""
@@ -165,6 +173,8 @@ class Router:
         message_type = packet["type"]
         if message_type is UPDT:
             self.update(srcif, packet)
+        if message type is DATA:
+            self.forward(scrif, packet)
         return False
 
     def send_error(self, conn, msg):
