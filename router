@@ -163,7 +163,7 @@ class Router:
         # NRTE = "no route"
         message_type = packet["type"]
         if message_type is UPDT:
-            update(self, scrif, packet)
+            self.update(srcif, packet)
         return False
 
     def send_error(self, conn, msg):
