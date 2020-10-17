@@ -161,10 +161,11 @@ class Router:
         self.routes.append(
             {"network": network, "netmask": netmask, "peer": srcif})
         # send copies of the announcement to neighboring routers
-        packet["src"] = packet["dst"]
         for sock in self.sockets:
-            if not self.sockets[sock] == srcif:
+            if not sock == srcif:
+                packet["src"] = sock[:len(packet["dst"]) - 1] + "1"
                 packet["dst"] = sock
+                packet["msg"]["ASPath"].append(args.asn)
                 self.sockets[sock].sendall(json.dumps(packet).encode())
     #{'type': 'dump', 'src': '192.168.0.2', 'dst': '192.168.0.1', 'msg': {}}
     # 192.168.0.2
