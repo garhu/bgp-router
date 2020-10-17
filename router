@@ -130,24 +130,26 @@ class Router:
 
     def forward(self, srcif, packet):
         """	Forward a data packet	"""
-        # {'type': 'data', 'src': '172.168.0.25', 'dst': '192.168.0.25'}
-        dst_in_routes = False
-        for route in self.routes:
-            if packet["dst"] in route.values():
-                dst_in_routes = True
 
-        if not dst_in_routes:
-            self.send_no_route_message(srcif, packet)
-        else:
-            packet_ip_split = packet["dst"].split(".")
-            packet_ip_split.pop()
-            beggining_ip = ".".join(packet_ip_split)
-            for sock in self.sockets:
-                sock_split = sock.split(".")
-                sock_split.pop()
-                sock_beggining_ip = ".".join(sock_split)
-                if beggining_ip == sock_beggining_ip:
-                    self.sockets[sock].sendall(json.dumps(packet).encode())
+        packet_ip_split = packet["dst"].split(".")
+        packet_ip_split.pop()
+        beggining_ip = ".".join(packet_ip_split)
+        for sock in self.sockets:
+            sock_split = sock.split(".")
+            sock_split.pop()
+            sock_beggining_ip = ".".join(sock_split)
+            if beggining_ip == sock_beggining_ip:
+                self.sockets[sock].sendall(json.dumps(packet).encode())
+
+        # {'type': 'data', 'src': '172.168.0.25', 'dst': '192.168.0.25'}
+        # dst_in_routes = False
+        # for route in self.routes:
+        #  if packet["dst"] in route.values():
+
+        # dst_in_routes = True
+        # if not dst_in_routes:
+        #     self.send_no_route_message(srcif, packet)
+        # else:
 
     def send_no_route_message(self, srcif, packet):
         # TODO
