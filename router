@@ -131,10 +131,16 @@ class Router:
     def forward(self, srcif, packet):
         """	Forward a data packet	"""
         packet_ip_split = packet["dst"].split(".")
-        for sock in self.sockets:
-            sock_split = sock.split(".")
-            if packet_ip_split[0] == sock_split[0]:
-                self.sockets[sock].sendall(json.dumps(packet).encode())
+        for route in self.routes:
+            route_split = route["network"].split(".")
+            if packet_ip_split[0] == route_split[0]:
+                self.sockets[route["peer"]].sendall(
+                    json.dumps(packet).encode())
+            # else:
+            #     no_route_packet = {"src": srcif, "dst": packet["src"],
+            #                        "type": "no route", "msg": {}}
+            #     self.sockets[srcif].sendall(
+            #         json.dumps(no_route_packet).encode())
 
         # {'type': 'data', 'src': '172.168.0.25', 'dst': '192.168.0.25'}
         # dst_in_routes = False
