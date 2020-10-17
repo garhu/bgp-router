@@ -139,7 +139,15 @@ class Router:
         if not dst_in_routes:
             self.send_no_route_message(srcif, packet)
         else:
-            self.sockets[packet["dst"]].socket.send(packet.encode())
+            packet_ip_split = packet["dst"].split(".")
+            packet_ip_split.pop()
+            beggining_ip = ".".join(packet_ip_split)
+            for sock in self.sockets:
+                sock_split = sock.split(".")
+                sock_split.pop()
+                sock_beggining_ip = ".".join(sock_split)
+                if beggining_ip == sock_beggining_ip:
+                    self.sockets[sock].sendall(json.dumps(packet).encode())
 
     def send_no_route_message(self, srcif, packet):
         # TODO
@@ -179,7 +187,7 @@ class Router:
         """	handles dump table requests	"""
         message = {"src": packet["dst"], "dst": packet["src"],
                    "type": "table", "msg": self.routes}
-        print(message)
+        self.sockets[message["dst"]].sendall(json.dumps(message).encode())
 
     def handle_packet(self, srcif, packet):
         """	dispatches a packet """
