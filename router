@@ -130,15 +130,10 @@ class Router:
 
     def forward(self, srcif, packet):
         """	Forward a data packet	"""
-
         packet_ip_split = packet["dst"].split(".")
-        packet_ip_split.pop()
-        beggining_ip = ".".join(packet_ip_split)
         for sock in self.sockets:
             sock_split = sock.split(".")
-            sock_split.pop()
-            sock_beggining_ip = ".".join(sock_split)
-            if beggining_ip == sock_beggining_ip:
+            if packet_ip_split[0] == sock_split[0]:
                 self.sockets[sock].sendall(json.dumps(packet).encode())
 
         # {'type': 'data', 'src': '172.168.0.25', 'dst': '192.168.0.25'}
@@ -173,9 +168,10 @@ class Router:
         # send copies of the announcement to neighboring routers
         for sock in self.sockets:
             if not sock == srcif:
-                packet["src"] = sock[:len(packet["dst"]) - 1] + "1"
+                packet["src"] = sock[:-1] + "1"
                 packet["dst"] = sock
-                packet["msg"]["ASPath"].append(args.asn)
+                if args.asn not in packet["msg"]["ASPath"]:
+                    packet["msg"]["ASPath"].append(args.asn)
                 self.sockets[sock].sendall(json.dumps(packet).encode())
     #{'type': 'dump', 'src': '192.168.0.2', 'dst': '192.168.0.1', 'msg': {}}
     # 192.168.0.2
