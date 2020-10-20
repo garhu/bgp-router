@@ -76,6 +76,11 @@ class Router:
         """ Lookup all valid routes for an address """
         # TODO
         outroutes = []
+        split_ip = daddr.split(".")
+        for route in self.routes:
+            route_split = route["network"].split(".")
+            if split_ip[0] == route_split[0]:
+                outroutes.append(route)
         return outroutes
 
     def get_shortest_as_path(self, routes):
@@ -111,9 +116,13 @@ class Router:
         """	Select the best route for a given address	"""
         # TODO
         peer = None
-        routes = lookup_routers(daddr)
+
+        routes = lookup_routes(daddr)
+
+        if len(routes) == 1:
+            peer = routes[1]["peer"]
         # Rules go here
-        if routes:
+        elif routes:
             # 1. Highest Preference
             routes = self.get_highest_preference(routes)
             # 2. Self Origin
@@ -130,17 +139,13 @@ class Router:
 
     def forward(self, srcif, packet):
         """	Forward a data packet	"""
-        packet_ip_split = packet["dst"].split(".")
-        for route in self.routes:
-            route_split = route["network"].split(".")
-            if packet_ip_split[0] == route_split[0]:
-                self.sockets[route["peer"]].sendall(
-                    json.dumps(packet).encode())
-            # else:
-            #     no_route_packet = {"src": srcif, "dst": packet["src"],
-            #                        "type": "no route", "msg": {}}
-            #     self.sockets[srcif].sendall(
-            #         json.dumps(no_route_packet).encode())
+        get_route(srcif, route["peer"]).sendall(
+            json.dumps(packet).encode())
+        # else:
+        #     no_route_packet = {"src": srcif, "dst": packet["src"],
+        #                        "type": "no route", "msg": {}}
+        #     self.sockets[srcif].sendall(
+        #         json.dumps(no_route_packet).encode())
 
         # {'type': 'data', 'src': '172.168.0.25', 'dst': '192.168.0.25'}
         # dst_in_routes = False
