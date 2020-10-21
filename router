@@ -9,7 +9,7 @@ import struct
 import math
 import sys
 
-#DEBUG = True
+# DEBUG = True
 DEBUG = False
 
 parser = argparse.ArgumentParser(description='route packets')
@@ -97,13 +97,13 @@ class Router:
         return outroutes
 
     def get_highest_preference(self, routes):
-        """ select the route with the shortest AS Path """
+        """ select the route with the highest localpref """
         outroutes = []
         highest_pref = 0
         for route in routes:
             if route["localpref"] > highest_pref:
                 outroutes.clear()
-                higest_pref = route["localpref"]
+                highest_pref = route["localpref"]
                 outroutes.append(route)
             elif route["localpref"] == highest_pref:
                 outroutes.append(route)
@@ -115,7 +115,10 @@ class Router:
         for route in routes:
             if route["selfOrigin"]:
                 outroutes.append(route)
-        return outroutes
+        if outroutes:
+            return outroutes
+        else:
+            return routes
 
     def get_origin_routes(self, routes):
         """ select origin routes: IGP > EGP > UNK """
@@ -140,6 +143,9 @@ class Router:
     def filter_relationships(self, srcif, routes):
         """ Don't allow Peer->Peer, Peer->Prov, or Prov->Peer forwards """
         outroutes = []
+        for route in routes:
+            if self.relations[srcif] == "cust" or self.relations[route["src"]] == "cust":
+                outroutes.append(route)
         return outroutes
 
     def get_route(self, srcif, daddr):
@@ -163,22 +169,27 @@ class Router:
             if len(routes) > 1:
                 routes = self.get_origin_routes(routes)
             # 5. Lowest IP Address
-        # TODO
-        # for route in routes:
-        #     octets = map(int, route["src"].split('/')[0].split('.'))
-        #     binary = bin(int('{0:08b}{1:08b}{2:08b}{3:08b}'.format(*octets)))
-        #     ip_in_decimal = int(binary)
+            # TODO
+            # for route in routes:
+            #     octets = map(int, route["src"].split('/')[0].split('.'))
+            #     binary = bin(int('{0:08b}{1:08b}{2:08b}{3:08b}'.format(*octets)))
+            #     ip_in_decimal = int(binary)
 
         # Final check: enforce peering relationships
-        # routes = self.filter_relationships(srcif, routes)
-        peer = routes[0]["peer"]
+        routes = self.filter_relationships(srcif, routes)
+        if routes:
+            peer = routes[0]["peer"]
         return self.sockets[peer] if peer else None
 
     def forward(self, srcif, packet):
         """	Forward a data packet	"""
         daddr = packet["dst"]
-        self.get_route(srcif, daddr).sendall(
-            json.dumps(packet).encode())
+        route_socket = self.get_route(srcif, daddr)
+        if route_socket:
+            route_socket.sendall(json.dumps(packet).encode())
+        else:
+            self.send_no_route_message(srcif, packet)
+
         # else:
         #     no_route_packet = {"src": srcif, "dst": packet["src"],
         #                        "type": "no route", "msg": {}}
@@ -196,8 +207,10 @@ class Router:
         # else:
 
     def send_no_route_message(self, srcif, packet):
-        # TODO
-        return False
+        src_address = srcif[:-1] + "1"
+        no_route_packet = {"src": src_address, "dst": packet["src"],
+                           "type": "no route", "msg": {}}
+        self.sockets[srcif].sendall(json.dumps(no_route_packet).encode())
 
     def coalesce(self):
         """	coalesce any routes that are right next to each other	"""
@@ -223,18 +236,37 @@ class Router:
         # send copies of the announcement to neighboring routers
         for sock in self.sockets:
             if not sock == srcif:
-                packet["src"] = sock[:-1] + "1"
-                packet["dst"] = sock
-                if args.asn not in packet["msg"]["ASPath"]:
-                    packet["msg"]["ASPath"].append(args.asn)
-                self.sockets[sock].sendall(json.dumps(packet).encode())
-    #{'type': 'dump', 'src': '192.168.0.2', 'dst': '192.168.0.1', 'msg': {}}
+                if self.relations[srcif] == "cust" or self.relations[sock] == "cust":
+                    packet_copy = packet.copy()
+                    packet_copy["src"] = sock[:-1] + "1"
+                    packet_copy["dst"] = sock
+                    if args.asn not in packet["msg"]["ASPath"]:
+                        packet_copy["msg"]["ASPath"].append(args.asn)
+                    self.sockets[sock].sendall(
+                        json.dumps(packet_copy).encode())
+
+    # {'type': 'dump', 'src': '192.168.0.2', 'dst': '192.168.0.1', 'msg': {}}
     # 192.168.0.2
 
     def revoke(self, packet):
         """	handle revoke packets	"""
-        # TODO
-        return True
+        # save a copy of the announcement in case you need it later
+        self.updates.append(packet)
+        # remove the networks from the list of routes
+        for route_removal in packet["msg"]:
+            for route in self.routes:
+                # possibly add prefix matching
+                if packet["src"] == route["src"] and route_removal["network"] == route["network"]:
+                    self.routes.remove(route)
+        # send copies of the announcement to neighboring routers
+        for sock in self.sockets:
+            if not sock == packet["src"]:
+                if self.relations[packet["src"]] == "cust" or self.relations[sock] == "cust":
+                    packet_copy = packet.copy()
+                    packet_copy["src"] = sock[:-1] + "1"
+                    packet_copy["dst"] = sock
+                    self.sockets[sock].sendall(
+                        json.dumps(packet_copy).encode())
 
     def dump(self, packet):
         """	handles dump table requests	"""
@@ -261,6 +293,8 @@ class Router:
             self.forward(srcif, packet)
         if message_type == DUMP:
             self.dump(packet)
+        if message_type == RVKE:
+            self.revoke(packet)
         return False
 
     def send_error(self, conn, msg):
