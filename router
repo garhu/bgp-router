@@ -7,6 +7,7 @@ import json
 import select
 import struct
 import math
+import sys
 
 #DEBUG = True
 DEBUG = False
@@ -74,7 +75,6 @@ class Router:
 
     def lookup_routes(self, daddr):
         """ Lookup all valid routes for an address """
-        # TODO
         outroutes = []
         split_ip = daddr.split(".")
         for route in self.routes:
@@ -86,13 +86,13 @@ class Router:
     def get_shortest_as_path(self, routes):
         """ select the route with the shortest AS Path """
         outroutes = []
-        max_as_path = 0
+        min_as_path = sys.maxsize
         for route in routes:
-            if len(route["ASPath"]) > max_as_path:
+            if len(route["ASPath"]) < min_as_path:
                 outroutes.clear()
-                max_as_path = len(route["ASPath"])
+                min_as_path = len(route["ASPath"])
                 outroutes.append(route)
-            elif len(route["ASPath"]) == max_as_path:
+            elif len(route["ASPath"]) == min_as_path:
                 outroutes.append(route)
         return outroutes
 
@@ -123,18 +123,18 @@ class Router:
         IGP_routes = []
         UNK_routes = []
         for route in routes:
-            route_origin = route["Origin"]
+            route_origin = route["origin"]
             if route_origin == "IGP":
                 IGP_routes.append(route)
             elif route_origin == "EGP":
                 EGP_routes.append(route)
             elif route_origin == "UNK":
                 UNK_routes.append(route)
-        if len(IGP_routes) > 1:
+        if IGP_routes:
             return IGP_routes
-        elif len(EGP_routes) > 1:
+        elif EGP_routes:
             return EGP_routes
-        elif len(UNK_routes) > 1:
+        elif UNK_routes:
             return UNK_routes
 
     def filter_relationships(self, srcif, routes):
@@ -151,22 +151,26 @@ class Router:
         # Rules go here
         if routes:
             # 1. Highest Preference
-            routes = self.get_highest_preference(routes)
+            if len(routes) > 1:
+                routes = self.get_highest_preference(routes)
             # 2. Self Origin
-            routes = self.get_self_origin(routes)
+            if len(routes) > 1:
+                routes = self.get_self_origin(routes)
             # 3. Shortest ASPath
-            routes = self.get_shortest_as_path(routes)
+            if len(routes) > 1:
+                routes = self.get_shortest_as_path(routes)
             # 4. EGP > IGP > UNK
-            routes = self.get_origin_routes(routes)
+            if len(routes) > 1:
+                routes = self.get_origin_routes(routes)
             # 5. Lowest IP Address
-            # TODO
-            # for route in routes:
-            #     octets = map(int, route["src"].split('/')[0].split('.'))
-            #     binary = bin(int('{0:08b}{1:08b}{2:08b}{3:08b}'.format(*octets)))
-            #     ip_in_decimal = int(binary)
+        # TODO
+        # for route in routes:
+        #     octets = map(int, route["src"].split('/')[0].split('.'))
+        #     binary = bin(int('{0:08b}{1:08b}{2:08b}{3:08b}'.format(*octets)))
+        #     ip_in_decimal = int(binary)
 
-            # Final check: enforce peering relationships
-            # routes = self.filter_relationships(srcif, routes)
+        # Final check: enforce peering relationships
+        # routes = self.filter_relationships(srcif, routes)
         peer = routes[0]["peer"]
         return self.sockets[peer] if peer else None
 
@@ -211,11 +215,11 @@ class Router:
         localpref = message["localpref"]
         selfOrigin = message["selfOrigin"]
         as_path = message["ASPath"]
-        origin = message["Origin"]
+        origin = message["origin"]
         src = packet["src"]
         self.routes.append(
             {"network": network, "netmask": netmask, "peer": srcif, "localpref": localpref,
-             "selfOrigin": selfOrigin, "ASPath": as_path, "Origin": origin, "src": src})
+             "selfOrigin": selfOrigin, "ASPath": as_path, "origin": origin, "src": src})
         # send copies of the announcement to neighboring routers
         for sock in self.sockets:
             if not sock == srcif:
@@ -234,7 +238,10 @@ class Router:
 
     def dump(self, packet):
         """	handles dump table requests	"""
-        routing_table_formatted = dict(list(self.routes())[0: 3])
+        routing_table_formatted = []
+        for route in self.routes:
+            routing_table_formatted.append({"network": route["network"],
+                                            "netmask": route["netmask"], "peer": route["peer"]})
         message = {"src": packet["dst"], "dst": packet["src"],
                    "type": "table", "msg": routing_table_formatted}
         self.sockets[message["dst"]].sendall(json.dumps(message).encode())
