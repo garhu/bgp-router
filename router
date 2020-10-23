@@ -61,6 +61,7 @@ class Router:
     def __init__(self, networks):
         self.routes = []
         self.updates = []
+        self.revokes = []
         self.relations = {}
         self.sockets = {}
         for relationship in networks:
@@ -351,15 +352,30 @@ class Router:
     #                 mask_len < removal_mask_len:
     #             self.disaggregate(route_removal, route)
 
+    def is_update_revoked(self, update):
+        for revoke in self.revokes:
+            if update["src"] == revoke["src"] and \
+                    update["msg"]["network"] == revoke["network"]:
+                return True
+        return False
+
+    # revoke packet
     def disaggregate(self, packet):
         self.routes.clear()
-        all_revokes = []
+
         for revoke_packet in packet["msg"]:
-            all_revokes.append(revoke_packet["network"])
+            # for update in self.updates:
+            #     if update["src"] == packet["src"] and \
+            #             update["msg"]["network"] == revoke_packet["network"] and \
+            #             update["msg"]["netmask"] == revoke_packet["netmask"]:
+            #         # self.updates.remove(update)
+            #         print("hi")
+            self.revokes.append(
+                {"src": packet["src"], "network": revoke_packet["network"], "netmask": revoke_packet["network"]})
 
         for update in self.updates:
-            if update["type"] == UPDT and \
-                    not (update["msg"]["network"] in all_revokes):
+            # revoke is a list of {"network": "<network prefix>", "netmask": "<associated CIDR netmask>"}
+            if update["type"] == UPDT and not self.is_update_revoked(update):
                 message = update["msg"]
                 network = message["network"]
                 netmask = message["netmask"]
@@ -428,7 +444,6 @@ class Router:
 
     def send_error(self, conn, msg):
         """ Send a no_route error message """
-        # TODO
         return
 
     # # test
