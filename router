@@ -8,6 +8,7 @@ import select
 import struct
 import math
 import sys
+import copy
 
 # DEBUG = True
 DEBUG = False
@@ -76,14 +77,21 @@ class Router:
     def ip_to_binary_string(self, ip):
         return "".join([bin(int(x)+256)[3:] for x in ip.split('.')])
 
-    def get_match_len(self, mask_len, daddr_in_binary, network_in_binary):
+    def get_match_len(self, mask_len, ip1_in_binary, ip2_in_binary):
         match_len = 0
         for i in range(mask_len):
-            if daddr_in_binary[i] == network_in_binary[i]:
+            if ip1_in_binary[i] == ip2_in_binary[i]:
                 match_len += 1
             else:
                 return 0
         return match_len
+
+    def get_mask_length(self, mask):
+        mask_len = 0
+        for c in self.ip_to_binary_string(mask):
+            if c == "1":
+                mask_len += 1
+        return mask_len
 
     def lookup_routes(self, daddr):
         """ Lookup all valid routes for an address """
@@ -91,10 +99,7 @@ class Router:
         longest_match_len = 0
         daddr_in_binary = self.ip_to_binary_string(daddr)
         for route in self.routes:
-            mask_len = 0
-            for c in self.ip_to_binary_string(route["netmask"]):
-                if c == "1":
-                    mask_len += 1
+            mask_len = self.get_mask_length(route["netmask"])
             match_len = self.get_match_len(
                 mask_len, daddr_in_binary, self.ip_to_binary_string(route["network"]))
             if match_len > longest_match_len:
@@ -168,11 +173,11 @@ class Router:
         lowest_ip = ""
 
         for route in routes:
-            route_ip_num = self.ip_to_binary_string(route["src"])
+            route_ip_num = self.ip_to_binary_string(route["peer"])
             if int(route_ip_num, 2) < lowest_ip_num:
                 outroutes.clear()
                 lowest_ip_num = int(route_ip_num, 2)
-                lowest_ip = route["src"]
+                lowest_ip = route["peer"]
                 outroutes.append(route)
             elif int(route_ip_num, 2) == lowest_ip_num:
                 outroutes.append(route)
@@ -182,7 +187,7 @@ class Router:
         """ Don't allow Peer->Peer, Peer->Prov, or Prov->Peer forwards """
         outroutes = []
         for route in routes:
-            if self.relations[srcif] == "cust" or self.relations[route["src"]] == "cust":
+            if self.relations[srcif] == "cust" or self.relations[route["peer"]] == "cust":
                 outroutes.append(route)
         return outroutes
 
@@ -246,10 +251,44 @@ class Router:
                            "type": "no route", "msg": {}}
         self.sockets[srcif].sendall(json.dumps(no_route_packet).encode())
 
+    def can_aggregate(self, new_route, route):
+        mask_len = self.get_mask_length(route["netmask"])
+        new_route_binary = self.ip_to_binary_string(new_route["network"])
+        route_binary = self.ip_to_binary_string(route["network"])
+
+        return new_route["netmask"] == route["netmask"] and \
+            self.get_match_len(mask_len - 1, new_route_binary, route_binary) == mask_len - 1 and \
+            new_route["peer"] == route["peer"] and \
+            new_route["localpref"] == route["localpref"] and \
+            new_route["selfOrigin"] == route["selfOrigin"] and \
+            new_route["ASPath"] == route["ASPath"] and \
+            new_route["origin"] == route["origin"]
+
+    def update_netmask(self, ip, to_add):
+        ip_in_binary = self.ip_to_binary_string(ip)
+        updated_binary = list(ip_in_binary)
+        for i in range(len(updated_binary) - 1, -1, -1):
+            if updated_binary[i] == "1":
+                if to_add:
+                    updated_binary[i + 1] = "1"
+                    break
+                else:
+                    updated_binary[i] = "0"
+                    break
+        updated_binary = "".join(updated_binary)
+        return ".".join([str(int(updated_binary[i:i + 8], 2))
+                         for i in range(0, len(updated_binary), 8)])
+
     def coalesce(self):
         """	coalesce any routes that are right next to each other	"""
-        # TODO (this is the most difficult task, save until last)
-        return False
+        new_route = self.routes[len(self.routes) - 1]
+        for route in self.routes:
+            if new_route is not route and self.can_aggregate(new_route, route):
+                new_route["netmask"] = self.update_netmask(
+                    new_route["netmask"], False)
+                new_route["network"] = route["network"]
+                self.routes.remove(route)
+                self.coalesce()
 
     def update(self, srcif, packet):
         """	handle update packets	"""
@@ -263,15 +302,15 @@ class Router:
         selfOrigin = message["selfOrigin"]
         as_path = message["ASPath"]
         origin = message["origin"]
-        src = packet["src"]
         self.routes.append(
             {"network": network, "netmask": netmask, "peer": srcif, "localpref": localpref,
-             "selfOrigin": selfOrigin, "ASPath": as_path, "origin": origin, "src": src})
+             "selfOrigin": selfOrigin, "ASPath": as_path, "origin": origin})
+        self.coalesce()
         # send copies of the announcement to neighboring routers
         for sock in self.sockets:
             if not sock == srcif:
                 if self.relations[srcif] == "cust" or self.relations[sock] == "cust":
-                    packet_copy = packet.copy()
+                    packet_copy = copy.deepcopy(packet)
                     packet_copy["src"] = sock[:-1] + "1"
                     packet_copy["dst"] = sock
                     if args.asn not in packet["msg"]["ASPath"]:
@@ -279,21 +318,76 @@ class Router:
                     self.sockets[sock].sendall(
                         json.dumps(packet_copy).encode())
 
+    # def disaggregate(self, route_removal, route):
+    #     route["netmask"] = self.update_netmask(route["netmask"], True)
+    #     mask_len = self.get_mask_length(route["netmask"])
+    #     route_in_binary = self.ip_to_binary_string(route["network"])
+    #     route0 = list(route_in_binary)[mask_len - 1] = "0"
+    #     route0 = ".".join([str(int(route0[i:i + 8], 2))
+    #                        for i in range(0, len(route0), 8)])
+    #     route1 = list(route_in_binary)[mask_len - 1] = "1"
+    #     route1 = ".".join([str(int(route1[i:i + 8], 2))
+    #                        for i in range(0, len(route1), 8)])
+    #     new_route0 = copy.deepcopy(route)
+    #     new_route0["network"] = route0
+    #     new_route1 = copy.deepcopy(route)
+    #     new_route1["network"] = route1
+
+    #     self.revoke_route(route_removal, new_route0)
+    #     self.revoke_route(route_removal, new_route1)
+
+    # def revoke_route(self, route_removal, route):
+    #     if route_removal["network"] == route["network"] and \
+    #             route_removal["netmask"] == route["netmask"]:
+    #         self.routes.remove(route)
+    #     else:
+    #         mask_len = self.get_mask_length(route["netmask"])
+    #         removal_mask_len = self.get_mask_length(route_removal["netmask"])
+    #         route_removal_binary = self.ip_to_binary_string(
+    #             route_removal["network"])
+    #         route_binary = self.ip_to_binary_string(route["network"])
+
+    #         if self.get_match_len(mask_len, route_binary, route_removal_binary) == mask_len and \
+    #                 mask_len < removal_mask_len:
+    #             self.disaggregate(route_removal, route)
+
+    def disaggregate(self, packet):
+        self.routes.clear()
+        all_revokes = []
+        for revoke_packet in packet["msg"]:
+            all_revokes.append(revoke_packet["network"])
+
+        for update in self.updates:
+            if update["type"] == UPDT and \
+                    not (update["msg"]["network"] in all_revokes):
+                message = update["msg"]
+                network = message["network"]
+                netmask = message["netmask"]
+                localpref = message["localpref"]
+                selfOrigin = message["selfOrigin"]
+                as_path = message["ASPath"]
+                origin = message["origin"]
+                src = update["src"]
+                self.routes.append(
+                    {"network": network, "netmask": netmask, "peer": src, "localpref": localpref,
+                        "selfOrigin": selfOrigin, "ASPath": as_path, "origin": origin})
+                self.coalesce()
+
     def revoke(self, packet):
         """	handle revoke packets	"""
         # save a copy of the announcement in case you need it later
         self.updates.append(packet)
         # remove the networks from the list of routes
-        for route_removal in packet["msg"]:
-            for route in self.routes:
-                # possibly add prefix matching
-                if packet["src"] == route["src"] and route_removal["network"] == route["network"]:
-                    self.routes.remove(route)
+        # for route_removal in packet["msg"]:
+        #     for route in self.routes:
+        #         if packet["src"] == route["src"]:
+        #             self.revoke_route(route_removal, route)
+        self.disaggregate(packet)
         # send copies of the announcement to neighboring routers
         for sock in self.sockets:
             if not sock == packet["src"]:
                 if self.relations[packet["src"]] == "cust" or self.relations[sock] == "cust":
-                    packet_copy = packet.copy()
+                    packet_copy = copy.deepcopy(packet)
                     packet_copy["src"] = sock[:-1] + "1"
                     packet_copy["dst"] = sock
                     self.sockets[sock].sendall(
@@ -308,6 +402,10 @@ class Router:
         message = {"src": packet["dst"], "dst": packet["src"],
                    "type": "table", "msg": routing_table_formatted}
         self.sockets[message["dst"]].sendall(json.dumps(message).encode())
+
+# [{'network': '192.168.2.0', 'netmask': '255.255.255.0', 'peer': '192.168.0.2'},
+# {'network': '192.168.3.0', 'netmask': '255.255.255.0', 'peer': '192.168.0.2'},
+# {'network': '172.169.0.0', 'netmask': '255.255.0.0', 'peer': '172.168.0.2'}]
 
     def handle_packet(self, srcif, packet):
         """	dispatches a packet """
@@ -333,25 +431,25 @@ class Router:
         # TODO
         return
 
-    # test
-    def ip_address_to_binary(self, ip):
-        split_ip = ip.split(".")
-        eight_bit_nums = []
-        for i in split_ip:
-            i_in_binary = format(int(i), '08b')
-            eight_bit_nums.append(i_in_binary.split("b")[0])
-        binary_ip_str = ""
-        for i in eight_bit_nums:
-            binary_ip_str += i
-        return binary_ip_str
+    # # test
+    # def ip_address_to_binary(self, ip):
+    #     split_ip = ip.split(".")
+    #     eight_bit_nums = []
+    #     for i in split_ip:
+    #         i_in_binary = format(int(i), '08b')
+    #         eight_bit_nums.append(i_in_binary.split("b")[0])
+    #     binary_ip_str = ""
+    #     for i in eight_bit_nums:
+    #         binary_ip_str += i
+    #     return binary_ip_str
 
-    # def binary_to_ip(self, binary):
+    # # def binary_to_ip(self, binary):
 
-    def bitwise_addition(self, b1, b2):
-        for i in range(len(b1)):
-            result = ""
-            result += str(int(b1[i]) and int(b2[i]))
-        return result
+    # def bitwise_addition(self, b1, b2):
+    #     for i in range(len(b1)):
+    #         result = ""
+    #         result += str(int(b1[i]) and int(b2[i]))
+    #     return result
 
     def run(self):
         while True:
